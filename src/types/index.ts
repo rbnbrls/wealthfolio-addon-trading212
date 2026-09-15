@@ -1,1 +1,1 @@
-export type { Config, Environment, Summary, TDividend, TOrder, TTransaction } from '../utils/trading212';
+export type { Config, Environment, SyncFrequency, Summary, TDividend, TOrder, TTransaction, TPosition } from '../utils/trading212';

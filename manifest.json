@@ -2,7 +2,7 @@
   "id": "wealthfolio-addon-trading212",
   "name": "Trading 212 Sync",
   "version": "0.1.2",
-  "description": "Import Trading 212 orders, dividends and cash transactions into Wealthfolio.",
+  "description": "Import Trading 212 orders, dividends, cash transactions and current positions into Wealthfolio.",
   "author": "Community",
   "homepage": "https://github.com/rbnbrls/wealthfolio-addon-trading212",
   "main": "dist/addon.js",

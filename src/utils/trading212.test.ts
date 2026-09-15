@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { HostAPI, NetworkRequest } from '@wealthfolio/addon-sdk';
-import { fetchTrading212, importWithDuplicateDetection, toActivityImports, type Summary } from './trading212';
+import { fetchTrading212, importWithDuplicateDetection, providerSymbol, toActivityImports, type Summary } from './trading212';
 
 function network(responses: Record<string, unknown>[]) {
   let index = 0;
@@ -10,24 +10,30 @@ function network(responses: Record<string, unknown>[]) {
 const summary: Summary = { id: 123, currency: 'EUR', cash: { availableToTrade: 10 } };
 
 describe('Trading 212 client and importer', () => {
+  it('converts Trading 212 tickers to provider hints without losing the source symbol', () => {
+    expect(providerSymbol('ASMLa_EQ')).toBe('ASML');
+    expect(providerSymbol('AAPL_US_EQ')).toBe('AAPL');
+    expect(providerSymbol('BRK_B_US_EQ')).toBe('BRK.B');
+  });
+
   it('follows nextPagePath for historical endpoints', async () => {
     const requests: NetworkRequest[] = [];
     const net = { request: vi.fn(async (request: NetworkRequest) => {
       requests.push(request);
-      const body = request.url.includes('summary') ? { id: 123, currency: 'EUR' } : request.url.includes('orders') && !request.url.includes('cursor=1') ? { items: [{ id: 1, ticker: 'AAPL_US_EQ', filledQuantity: 1, averagePrice: 100, dateExecuted: '2026-01-01T10:00:00Z', type: 'MARKET' }], nextPagePath: '/api/v0/equity/history/orders?cursor=1' } : request.url.includes('cursor=1') ? { items: [{ id: 2, ticker: 'MSFT_US_EQ', filledQuantity: 2, averagePrice: 50, dateExecuted: '2026-01-02T10:00:00Z', type: 'MARKET' }], nextPagePath: null } : { items: [], nextPagePath: null };
+      const body = request.url.includes('summary') ? { id: 123, currency: 'EUR' } : request.url.includes('/equity/positions') ? { items: [] } : request.url.includes('orders') && !request.url.includes('cursor=1') ? { items: [{ id: 1, ticker: 'AAPL_US_EQ', filledQuantity: 1, averagePrice: 100, dateExecuted: '2026-01-01T10:00:00Z', type: 'MARKET' }], nextPagePath: '/api/v0/equity/history/orders?cursor=1' } : request.url.includes('cursor=1') ? { items: [{ id: 2, ticker: 'MSFT_US_EQ', filledQuantity: 2, averagePrice: 50, dateExecuted: '2026-01-02T10:00:00Z', type: 'MARKET' }], nextPagePath: null } : { items: [], nextPagePath: null };
       return { status: 200, headers: {}, body: JSON.stringify(body) };
     }) };
     const data = await fetchTrading212(net as never, 'demo');
     expect(data.summary.id).toBe(123);
     expect(data.orders).toHaveLength(2);
-    expect(requests).toHaveLength(5);
-    expect(requests.some((request) => request.url.includes('/api/v0/history/dividends'))).toBe(true);
-    expect(requests.some((request) => request.url.includes('/api/v0/history/transactions'))).toBe(true);
+    expect(requests).toHaveLength(6);
+    expect(requests.some((request) => request.url.includes('/api/v0/equity/history/dividends'))).toBe(true);
+    expect(requests.some((request) => request.url.includes('/api/v0/equity/history/transactions'))).toBe(true);
     expect(requests.some((request) => request.url.includes('/api/v0/api/v0/'))).toBe(false);
   });
 
   it('maps executed orders, dividends and cash movements to activities', () => {
-    const rows = toActivityImports({ summary, orders: [{ id: 1, ticker: 'AAPL_US_EQ', filledQuantity: 2, averagePrice: 10, dateExecuted: '2026-01-01T10:00:00Z', type: 'MARKET' }], dividends: [{ id: 2, ticker: 'AAPL_US_EQ', amount: 1.25, currency: 'EUR', paidOn: '2026-01-02T10:00:00Z' }], transactions: [{ id: 3, type: 'DEPOSIT', amount: 100, currency: 'EUR', date: '2026-01-03T10:00:00Z' }] }, 'wf-account');
+    const rows = toActivityImports({ summary, positions: [], orders: [{ id: 1, ticker: 'AAPL_US_EQ', filledQuantity: 2, averagePrice: 10, dateExecuted: '2026-01-01T10:00:00Z', type: 'MARKET' }], dividends: [{ id: 2, ticker: 'AAPL_US_EQ', amount: 1.25, currency: 'EUR', paidOn: '2026-01-02T10:00:00Z' }], transactions: [{ id: 3, type: 'DEPOSIT', amount: 100, currency: 'EUR', date: '2026-01-03T10:00:00Z' }] }, 'wf-account');
     expect(rows.map((row) => row.activityType)).toEqual(['BUY', 'DIVIDEND', 'DEPOSIT']);
     expect(rows[0]).toMatchObject({ accountId: 'wf-account', symbol: 'AAPL_US_EQ', quantity: 2, amount: '20' });
   });

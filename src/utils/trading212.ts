@@ -4,7 +4,8 @@ export const ADDON_ID = 'wealthfolio-addon-trading212';
 export const SECRET_KEY = `${ADDON_ID}.credentials`;
 const CONFIG_KEY = `${ADDON_ID}.config`;
 export type Environment = 'live' | 'demo';
-export type Config = { environment: Environment; accountId: string; brokerAccountId?: string; currency?: string; lastSync?: string; cursor?: string };
+export type SyncFrequency = 'manual' | '15m' | 'hourly' | 'daily';
+export type Config = { environment: Environment; accountId: string; brokerAccountId?: string; currency?: string; lastSync?: string; cursor?: string; syncFrequency?: SyncFrequency };
 
 export async function readConfig(api: HostAPI): Promise<Config> {
   const raw = await api.storage.get(CONFIG_KEY);
@@ -14,9 +15,17 @@ export async function saveConfig(api: HostAPI, config: Config) { await api.stora
 
 type Page<T> = { items?: T[]; nextPagePath?: string | null };
 export type Summary = { id: number; currency: string; cash?: { availableToTrade?: number; inPies?: number; reservedForOrders?: number }; totalValue?: number };
-export type TOrder = { id: number; ticker: string; quantity?: number; filledQuantity?: number; fillPrice?: number; averagePrice?: number; dateCreated?: string; dateExecuted?: string; type?: string; status?: string; currency?: string; totalCost?: number;};
-export type TDividend = { id: number; ticker: string; amount: number; currency: string; paidOn?: string; reference?: string };
-export type TTransaction = { id: number; type?: string; amount: number; currency: string; date?: string; reference?: string; ticker?: string };
+export type TOrder = { id: number; ticker: string; quantity?: number; filledQuantity?: number; fillPrice?: number; averagePrice?: number; dateCreated?: string; dateExecuted?: string; type?: string; side?: string; status?: string; currency?: string; totalCost?: number; filledValue?: number; instrument?: { name?: string; shortName?: string } };
+export type TDividend = { id: number; ticker: string; amount: number; currency: string; paidOn?: string; reference?: string; instrument?: { name?: string; shortName?: string } };
+export type TTransaction = { id: number; type?: string; amount: number; currency: string; date?: string; dateTime?: string; reference?: string; ticker?: string };
+export type TPosition = { ticker: string; quantity: number; averagePricePaid?: number; currentPrice?: number; currency?: string; instrument?: { ticker?: string; name?: string; currency?: string; }; };
+
+/** Convert a Trading 212 venue-specific code to a provider-friendly hint. */
+export function providerSymbol(ticker: string): string {
+  let symbol = ticker.replace(/_[A-Z]{2,3}_EQ$/, '').replace(/_EQ$/, '');
+  symbol = symbol.replace(/^([A-Z]{2,8})[a-z]$/, '$1');
+  return symbol.replace(/_/g, '.');
+}
 
 async function requestJson<T>(net: NetworkAPI, base: string, path: string): Promise<T> {
   const baseUrl = new URL(base);
@@ -33,16 +42,28 @@ async function requestJson<T>(net: NetworkAPI, base: string, path: string): Prom
 }
 async function allPages<T>(net: NetworkAPI, base: string, path: string): Promise<T[]> {
   const items: T[] = []; let next: string | null | undefined = path; let pages = 0;
-  while (next && pages++ < 100) { const page: Page<T> = await requestJson<Page<T>>(net, base, next); items.push(...(page.items ?? [])); next = page.nextPagePath; }
+  while (next && pages++ < 100) {
+    const page: Page<T> = await requestJson<Page<T>>(net, base, next); const pageItems = page.items ?? [];
+    items.push(...pageItems);
+    next = page.nextPagePath;
+  }
   return items;
 }
 export async function fetchTrading212(net: NetworkAPI, env: Environment) {
   const base = env === 'demo' ? 'https://demo.trading212.com/api/v0' : 'https://live.trading212.com/api/v0';
   const summary = await fetchAccountSummary(net, env);
+  const positions = await allPages<TPosition>(net, base, '/equity/positions');
   const orders = await allPages<TOrder>(net, base, '/equity/history/orders?limit=50');
-  const dividends = await allPages<TDividend>(net, base, '/history/dividends?limit=50');
-  const transactions = await allPages<TTransaction>(net, base, '/history/transactions?limit=50');
-  return { summary, orders, dividends, transactions };
+  // Trading 212's historical-events API is under /equity/history. Keeping
+  // the full API path here also makes cursor links returned by the API safe
+  // to resolve without accidentally duplicating /api/v0.
+  const dividends = await allPages<TDividend>(net, base, '/equity/history/dividends?limit=50');
+  // Some live accounts return HTTP 400 for the documented `time` query
+  // parameter. Fetch cursor pages consistently and apply the date range
+  // locally, preserving the same result without account-specific failures.
+  const transactionsPath = '/equity/history/transactions?limit=50';
+  const transactions = await allPages<TTransaction>(net, base, transactionsPath);
+  return { summary, positions, orders, dividends, transactions };
 }
 
 export async function fetchAccountSummary(net: NetworkAPI, env: Environment): Promise<Summary> {
@@ -56,14 +77,14 @@ export function toActivityImports(data: Awaited<ReturnType<typeof fetchTrading21
   const rows: ActivityImport[] = [];
   for (const order of data.orders) {
     if (!order.dateExecuted || !order.ticker || !order.filledQuantity) continue;
-    const isSell = String(order.type).toUpperCase().includes('SELL');
-    rows.push({ accountId, activityType: isSell ? 'SELL' : 'BUY', date: instant(order.dateExecuted), amount: amount(order.totalCost ?? (order.filledQuantity * (order.averagePrice ?? order.fillPrice ?? 0))), currency: order.currency ?? data.summary.currency, symbol: order.ticker, quantity: Math.abs(order.filledQuantity), unitPrice: order.averagePrice ?? order.fillPrice, comment: `Trading 212 order ${order.id}`, isValid: true, isDraft: false });
+    const isSell = String(order.side ?? order.type).toUpperCase().includes('SELL');
+    rows.push({ accountId, activityType: isSell ? 'SELL' : 'BUY', date: instant(order.dateExecuted), amount: amount(order.totalCost ?? order.filledValue ?? (order.filledQuantity * (order.averagePrice ?? order.fillPrice ?? 0))), currency: order.currency ?? data.summary.currency, symbol: order.ticker, providerSymbol: providerSymbol(order.ticker), symbolName: order.instrument?.name ?? order.instrument?.shortName, quantity: Math.abs(order.filledQuantity), unitPrice: order.averagePrice ?? order.fillPrice, comment: `Trading 212 order ${order.id}`, isValid: true, isDraft: false });
   }
-  for (const dividend of data.dividends) rows.push({ accountId, activityType: 'DIVIDEND', date: instant(dividend.paidOn), amount: amount(dividend.amount), currency: dividend.currency, symbol: dividend.ticker, comment: dividend.reference ?? `Trading 212 dividend ${dividend.id}`, isValid: true, isDraft: false });
+  for (const dividend of data.dividends) rows.push({ accountId, activityType: 'DIVIDEND', date: instant(dividend.paidOn), amount: amount(dividend.amount), currency: dividend.currency, symbol: dividend.ticker, providerSymbol: providerSymbol(dividend.ticker), symbolName: dividend.instrument?.name ?? dividend.instrument?.shortName, comment: dividend.reference ?? `Trading 212 dividend ${dividend.id}`, isValid: true, isDraft: false });
   for (const tx of data.transactions) {
     const type = String(tx.type ?? '').toUpperCase();
-    const activityType = type.includes('DEPOSIT') ? 'DEPOSIT' : type.includes('WITHDRAW') ? 'WITHDRAWAL' : type.includes('FEE') ? 'FEE' : type.includes('INTEREST') ? 'INTEREST' : undefined;
-    if (activityType) rows.push({ accountId, activityType, date: instant(tx.date), amount: amount(tx.amount), currency: tx.currency, symbol: '', comment: tx.reference ?? `Trading 212 ${tx.type ?? 'cash transaction'} ${tx.id}`, isValid: true, isDraft: false });
+    const activityType = type.includes('DEPOSIT') ? 'DEPOSIT' : type.includes('WITHDRAW') ? 'WITHDRAWAL' : type.includes('FEE') ? 'FEE' : type.includes('INTEREST') ? 'INTEREST' : type.includes('TRANSFER') ? (tx.amount >= 0 ? 'DEPOSIT' : 'WITHDRAWAL') : undefined;
+    if (activityType) rows.push({ accountId, activityType, date: instant(tx.dateTime ?? tx.date), amount: amount(tx.amount), currency: tx.currency, symbol: '', comment: tx.reference ?? `Trading 212 ${tx.type ?? 'cash transaction'} ${tx.id}`, isValid: true, isDraft: false });
   }
   return rows;
 }
