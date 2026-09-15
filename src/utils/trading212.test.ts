@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { HostAPI, NetworkRequest } from '@wealthfolio/addon-sdk';
-import { fetchTrading212, importWithDuplicateDetection, toActivityImports, type Summary } from './lib';
+import { fetchTrading212, importWithDuplicateDetection, toActivityImports, type Summary } from './trading212';
 
 function network(responses: Record<string, unknown>[]) {
   let index = 0;
@@ -21,7 +21,9 @@ describe('Trading 212 client and importer', () => {
     expect(data.summary.id).toBe(123);
     expect(data.orders).toHaveLength(2);
     expect(requests).toHaveLength(5);
-    expect(requests.some((request) => request.url.includes('/api/v0/equity/history/dividends'))).toBe(true);
+    expect(requests.some((request) => request.url.includes('/api/v0/history/dividends'))).toBe(true);
+    expect(requests.some((request) => request.url.includes('/api/v0/history/transactions'))).toBe(true);
+    expect(requests.some((request) => request.url.includes('/api/v0/api/v0/'))).toBe(false);
   });
 
   it('maps executed orders, dividends and cash movements to activities', () => {

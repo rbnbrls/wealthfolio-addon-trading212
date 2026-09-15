@@ -4,7 +4,7 @@ export const ADDON_ID = 'wealthfolio-addon-trading212';
 export const SECRET_KEY = `${ADDON_ID}.credentials`;
 const CONFIG_KEY = `${ADDON_ID}.config`;
 export type Environment = 'live' | 'demo';
-export type Config = { environment: Environment; accountId: string; lastSync?: string; cursor?: string };
+export type Config = { environment: Environment; accountId: string; brokerAccountId?: string; currency?: string; lastSync?: string; cursor?: string };
 
 export async function readConfig(api: HostAPI): Promise<Config> {
   const raw = await api.storage.get(CONFIG_KEY);
@@ -19,8 +19,16 @@ export type TDividend = { id: number; ticker: string; amount: number; currency: 
 export type TTransaction = { id: number; type?: string; amount: number; currency: string; date?: string; reference?: string; ticker?: string };
 
 async function requestJson<T>(net: NetworkAPI, base: string, path: string): Promise<T> {
-  const response = await net.request({ url: path.startsWith('http') ? path : `${base}${path}`, method: 'GET', auth: { type: 'basic', secretKey: SECRET_KEY } });
-  if (response.status !== 200) throw new Error(`Trading 212 returned HTTP ${response.status}`);
+  const baseUrl = new URL(base);
+  const url = path.startsWith('http') ? path : path.startsWith('/api/v0/') ? `${baseUrl.origin}${path}` : `${base}${path}`;
+  let response = await net.request({ url, method: 'GET', auth: { type: 'basic', secretKey: SECRET_KEY } });
+  for (let attempt = 0; response.status === 429 && attempt < 3; attempt += 1) {
+    const retryAfter = Number(response.headers?.['retry-after'] ?? response.headers?.['Retry-After']);
+    const waitMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 5000 * (attempt + 1);
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+    response = await net.request({ url, method: 'GET', auth: { type: 'basic', secretKey: SECRET_KEY } });
+  }
+  if (response.status !== 200) throw new Error(`Trading 212 returned HTTP ${response.status} for ${path}`);
   try { return JSON.parse(response.body) as T; } catch { throw new Error('Trading 212 returned invalid JSON'); }
 }
 async function allPages<T>(net: NetworkAPI, base: string, path: string): Promise<T[]> {
@@ -30,13 +38,16 @@ async function allPages<T>(net: NetworkAPI, base: string, path: string): Promise
 }
 export async function fetchTrading212(net: NetworkAPI, env: Environment) {
   const base = env === 'demo' ? 'https://demo.trading212.com/api/v0' : 'https://live.trading212.com/api/v0';
-  const [summary, orders, dividends, transactions] = await Promise.all([
-    requestJson<Summary>(net, base, '/equity/account/summary'),
-    allPages<TOrder>(net, base, '/equity/history/orders?limit=50'),
-    allPages<TDividend>(net, base, '/equity/history/dividends?limit=50'),
-    allPages<TTransaction>(net, base, '/equity/history/transactions?limit=50'),
-  ]);
+  const summary = await fetchAccountSummary(net, env);
+  const orders = await allPages<TOrder>(net, base, '/equity/history/orders?limit=50');
+  const dividends = await allPages<TDividend>(net, base, '/history/dividends?limit=50');
+  const transactions = await allPages<TTransaction>(net, base, '/history/transactions?limit=50');
   return { summary, orders, dividends, transactions };
+}
+
+export async function fetchAccountSummary(net: NetworkAPI, env: Environment): Promise<Summary> {
+  const base = env === 'demo' ? 'https://demo.trading212.com/api/v0' : 'https://live.trading212.com/api/v0';
+  return requestJson<Summary>(net, base, '/equity/account/summary');
 }
 
 const instant = (value?: string) => value ? new Date(value).toISOString() : new Date(0).toISOString();

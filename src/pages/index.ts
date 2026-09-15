@@ -1,0 +1,1 @@
+export { TradingPage } from '../addon';

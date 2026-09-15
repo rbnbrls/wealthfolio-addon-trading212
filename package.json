@@ -1,12 +1,13 @@
 {
   "name": "wealthfolio-addon-trading212",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.24.0",
   "scripts": {
     "build": "vite build",
     "dev": "vite build --watch",
+    "dev:server": "wealthfolio-addon dev",
     "type-check": "tsc --noEmit",
     "test": "vitest run",
     "package": "pnpm build && mkdir -p dist && find dist -name '*.map' -delete && zip -r dist/wealthfolio-addon-trading212.zip manifest.json dist README.md -x '*.map'"
@@ -15,7 +16,9 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.0.0",
-    "@wealthfolio/addon-sdk": "^3.7.0",
+    "@wealthfolio/addon-dev-tools": "^3.8.0",
+    "@wealthfolio/addon-sdk": "^3.8.0",
+    "@tanstack/react-query": "^5.90.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "typescript": "^5.8.0",
