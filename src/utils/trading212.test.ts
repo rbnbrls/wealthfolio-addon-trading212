@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { HostAPI, NetworkRequest } from '@wealthfolio/addon-sdk';
-import { fetchTrading212, importWithDuplicateDetection, providerSymbol, toActivityImports, type Summary } from './trading212';
+import { fetchAccountSummary, fetchTrading212, fetchTrading212Incremental, importWithDuplicateDetection, providerSymbol, toActivityImports, type Summary } from './trading212';
 
 function network(responses: Record<string, unknown>[]) {
   let index = 0;
@@ -10,6 +10,15 @@ function network(responses: Record<string, unknown>[]) {
 const summary: Summary = { id: 123, currency: 'EUR', cash: { availableToTrade: 10 } };
 
 describe('Trading 212 client and importer', () => {
+  it('retries transient network failures with a useful endpoint in the final error', async () => {
+    const request = vi.fn()
+      .mockRejectedValueOnce(new Error('socket hang up'))
+      .mockResolvedValueOnce({ status: 200, headers: {}, body: JSON.stringify(summary) });
+    await expect(fetchAccountSummary({ request } as never, 'live')).resolves.toEqual(summary);
+    expect(request).toHaveBeenCalledTimes(2);
+    await expect(fetchAccountSummary({ request: vi.fn().mockRejectedValue(new Error('offline')) } as never, 'live')).rejects.toThrow('/equity/account/summary');
+  }, 40000);
+
   it('converts Trading 212 tickers to provider hints without losing the source symbol', () => {
     expect(providerSymbol('ASMLa_EQ')).toBe('ASML');
     expect(providerSymbol('AAPL_US_EQ')).toBe('AAPL');
@@ -30,6 +39,42 @@ describe('Trading 212 client and importer', () => {
     expect(requests.some((request) => request.url.includes('/api/v0/equity/history/dividends'))).toBe(true);
     expect(requests.some((request) => request.url.includes('/api/v0/equity/history/transactions'))).toBe(true);
     expect(requests.some((request) => request.url.includes('/api/v0/api/v0/'))).toBe(false);
+  });
+
+  it('reports each fetched page for sync progress feedback', async () => {
+    const progress: string[] = [];
+    const net = { request: vi.fn(async (request: NetworkRequest) => {
+      const body = request.url.includes('summary') ? { id: 123, currency: 'EUR' } : { items: [], nextPagePath: null };
+      return { status: 200, headers: {}, body: JSON.stringify(body) };
+    }) };
+    await fetchTrading212(net as never, 'demo', (update) => progress.push(`${update.endpoint}:${update.page}:${update.total}`));
+    expect(progress).toEqual([
+      '/equity/account/summary:1:1',
+      '/equity/positions:1:0',
+      '/equity/history/orders:1:0',
+      '/equity/history/dividends:1:0',
+      '/equity/history/transactions:1:0',
+    ]);
+  });
+
+  it('fetches a recent delta and one bounded history month, preserving cursors', async () => {
+    const requests: NetworkRequest[] = [];
+    const net = { request: vi.fn(async (request: NetworkRequest) => {
+      requests.push(request);
+      const url = request.url;
+      const body = url.includes('summary') ? summary
+        : url.includes('/equity/positions') ? { items: [] }
+          : url.includes('cursor=history') ? { items: [{ id: 9, ticker: 'OLD_US_EQ', filledQuantity: 1, averagePrice: 5, dateExecuted: '2025-12-15T00:00:00Z' }], nextPagePath: '/api/v0/equity/history/orders?cursor=older' }
+            : url.includes('cursor=older') ? { items: [{ id: 7, ticker: 'OLDER_US_EQ', filledQuantity: 1, averagePrice: 5, dateExecuted: '2025-11-15T00:00:00Z' }], nextPagePath: '/api/v0/equity/history/orders?cursor=oldest' }
+            : url.includes('orders') ? { items: [{ id: 8, ticker: 'NEW_US_EQ', filledQuantity: 1, averagePrice: 10, dateExecuted: '2026-01-15T00:00:00Z' }], nextPagePath: null }
+              : { items: [], nextPagePath: null };
+      return { status: 200, headers: {}, body: JSON.stringify(body) };
+    }) };
+    const result = await fetchTrading212Incremental(net as never, 'demo', '2026-01-01T00:00:00Z', { orders: '/api/v0/equity/history/orders?cursor=history' }, { orders: '2026-01-01T00:00:00Z' });
+    expect(result.data.orders.map((order) => order.id)).toEqual([8, 9]);
+    expect(result.nextCursors.orders).toBe('/api/v0/equity/history/orders?cursor=oldest');
+    expect(result.nextHistoryBefore.orders).toBe('2025-12-01T00:00:00.000Z');
+    expect(requests.some((request) => request.url.includes('cursor=history'))).toBe(true);
   });
 
   it('maps executed orders, dividends and cash movements to activities', () => {

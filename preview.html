@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trading 212 addon preview</title>
+  <link rel="stylesheet" href="/dist/wealthfolio-addon-trading212.css">
+  <style>
+    :root { --background: #ffffff; --foreground: #24292f; --card: #ffffff; --card-foreground: #24292f; --border: #d0d7de; --muted: #f6f8fa; --muted-foreground: #6b7280; --primary: #0969da; --primary-foreground: #ffffff; --secondary: #f6f8fa; --secondary-foreground: #24292f; --input-bg: #ffffff; --input: #d0d7de; --success: #188038; --success-foreground: #ffffff; --destructive: #d1242f; }
+    :root[data-preview-theme="dark"] { --background: #10141b; --foreground: #e8edf5; --card: #181e28; --card-foreground: #e8edf5; --border: #293342; --muted: #202938; --muted-foreground: #a7b2c3; --primary: #6d8fe8; --primary-foreground: #10141b; --secondary: #293446; --secondary-foreground: #e8edf5; --input-bg: #111720; --input: #344052; --success: #70c187; --success-foreground: #10141b; --destructive: #ff7b86; }
+    .preview-toolbar { position: sticky; top: 0; z-index: 1; display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; background: var(--background); border-bottom: 1px solid var(--border); }
+    .preview-toolbar button { padding: 6px 10px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="preview-toolbar"><span style="margin-right:auto;color:var(--muted-foreground);font-size:12px">Temporary Appearance preview</span><button data-theme="light">Light</button><button data-theme="dark">Dark</button></div>
+  <main class="page">
+    <header><div><div class="eyebrow">BROKER CONNECTION</div><h1>Trading 212</h1><p>Import orders, dividends and cash movements directly from your Trading 212 account.</p></div><button class="primary">↻ Sync now</button></header>
+    <section class="sync-progress"><div class="sync-progress-heading"><strong>Sync in progress</strong><span>60% · 2m 14s</span></div><div class="progress-track"><span style="width:60%"></span></div><ol class="sync-stages"><li class="done"><span class="stage-marker">✓</span><span>Fetch history &amp; positions</span></li><li class="active"><span class="stage-marker">2</span><span>Import activities</span></li><li><span class="stage-marker">3</span><span>Save sync timestamp</span></li></ol><p class="sync-progress-message">Checking and importing this sync batch…</p></section>
+    <section class="card"><h2>Connection</h2><p class="muted">Your credentials are stored in Wealthfolio’s secure keyring and never persisted in addon settings.</p><div class="grid"><label>Environment<select><option>Live</option><option>Demo</option></select></label><label>API key<input placeholder="Trading 212 API key"></label><label>API secret<input type="password" placeholder="Trading 212 API secret"></label><label>Sync frequency<select><option>Manual only</option><option>Every 15 minutes</option></select></label></div><button>Save &amp; test connection</button></section>
+    <section class="notice">Sync complete: 12 imported, 4 duplicates, 0 skipped; 3 open positions checked.</section>
+  </main>
+  <script>document.querySelectorAll('[data-theme]').forEach((button) => button.addEventListener('click', () => document.documentElement.dataset.previewTheme = button.dataset.theme));</script>
+</body>
+</html>

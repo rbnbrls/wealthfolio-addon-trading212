@@ -1,0 +1,17 @@
+services:
+  trading212-sync-worker:
+    build:
+      context: ./worker
+    restart: unless-stopped
+    environment:
+      WEALTHFOLIO_URL: ${WEALTHFOLIO_URL:-http://host.docker.internal:8088}
+      WEALTHFOLIO_ACCOUNT_ID: ${WEALTHFOLIO_ACCOUNT_ID:?set the Wealthfolio account id}
+      WEALTHFOLIO_AUTH_TOKEN: ${WEALTHFOLIO_AUTH_TOKEN:-}
+      TRADING212_ENVIRONMENT: ${TRADING212_ENVIRONMENT:-live}
+      TRADING212_API_KEY: ${TRADING212_API_KEY:?set the Trading 212 API key}
+      TRADING212_API_SECRET: ${TRADING212_API_SECRET:?set the Trading 212 API secret}
+      SYNC_ON_START: ${SYNC_ON_START:-true}
+      SYNC_INTERVAL_MS: ${SYNC_INTERVAL_MS:-86400000}
+      HEALTH_PORT: 8787
+    ports:
+      - "127.0.0.1:8787:8787"

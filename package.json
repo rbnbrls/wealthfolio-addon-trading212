@@ -1,6 +1,6 @@
 {
   "name": "wealthfolio-addon-trading212",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.24.0",
@@ -10,6 +10,7 @@
     "dev:server": "wealthfolio-addon dev",
     "type-check": "tsc --noEmit",
     "test": "vitest run",
+    "test:worker": "node --test worker/sync-worker.node-test.mjs",
     "package": "pnpm build && mkdir -p dist && find dist -name '*.map' -delete && zip -r dist/wealthfolio-addon-trading212.zip manifest.json dist README.md -x '*.map'"
   },
   "devDependencies": {
