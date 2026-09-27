@@ -11,6 +11,7 @@
     "dev:server": "wealthfolio-addon dev",
     "type-check": "tsc --noEmit",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:worker": "node --test worker/sync-worker.node-test.mjs",
     "package": "pnpm build && mkdir -p dist && find dist -name '*.map' -delete && zip -r dist/wealthfolio-addon-trading212.zip manifest.json dist README.md -x '*.map'"
   },
@@ -18,6 +19,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.0.0",
+    "@vitest/coverage-v8": "^4.0.0",
     "@wealthfolio/addon-dev-tools": "^3.8.0",
     "@wealthfolio/addon-sdk": "^3.8.0",
     "@tanstack/react-query": "^5.90.0",

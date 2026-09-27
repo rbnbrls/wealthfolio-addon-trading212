@@ -35,6 +35,19 @@ When Wealthfolio authentication is enabled, set `WEALTHFOLIO_AUTH_TOKEN` to a se
 
 The worker deliberately imports through the same duplicate-check flow as the addon, so reruns are safe. It does not write positions snapshots; it fetches them as a validation count, matching the addon behavior.
 
+## Tests and coverage
+
+```bash
+pnpm install
+pnpm run type-check      # tsc --noEmit
+pnpm run test            # vitest unit suite
+pnpm run test:coverage   # vitest + V8 coverage; prints the line total and enforces vitest.config.ts thresholds
+pnpm run test:worker     # node --test for the dependency-free worker
+```
+
+`.github/workflows/ci.yml` runs all of these on every push and pull request, uploads the
+`coverage/` report as a build artifact, and appends the coverage line total to the job summary.
+
 ## Test the GUI locally
 
 The addon development server is a runtime API, not a standalone web page, so opening its root URL (`/`) returns `Cannot GET /` by design. Use it as the addon source for a Wealthfolio development host:
