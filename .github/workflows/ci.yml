@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Type-check, tests and coverage
+    runs-on: ubuntu-latest
+    # Recorded coverage gate. `pnpm run test:coverage` runs the vitest suite with
+    # these as its fail-under thresholds, so the job fails when any metric drops
+    # below them. They are the levels measured on main at e4cdf5b (lines 70.5%,
+    # statements 45.57%, functions 35.08%, branches 36.15%), floored to whole
+    # percent. vitest.config.ts reads the same variables, so a local
+    # `pnpm run test:coverage` enforces an identical gate, and
+    # tests/coverage-gate.test.ts fails when the two drift apart. Raise them as
+    # tests are added.
+    env:
+      COVERAGE_LINES_THRESHOLD: 70
+      COVERAGE_STATEMENTS_THRESHOLD: 45
+      COVERAGE_FUNCTIONS_THRESHOLD: 35
+      COVERAGE_BRANCHES_THRESHOLD: 36
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # Reads the pinned `packageManager` field (pnpm@9.15.9), so CI and the
+      # nixpacks/Coolify build resolve the same pnpm.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check (tsc)
+        run: pnpm run type-check
+
+      - name: Build addon bundle
+        run: pnpm run build
+
+      - name: Worker tests (node --test)
+        run: pnpm run test:worker
+
+      - name: Unit tests with coverage (vitest)
+        run: pnpm run test:coverage
+
+      - name: Coverage line total
+        if: always()
+        run: node scripts/coverage-summary.mjs
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage
+          if-no-files-found: ignore
