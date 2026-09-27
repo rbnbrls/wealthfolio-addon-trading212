@@ -41,12 +41,20 @@ The worker deliberately imports through the same duplicate-check flow as the add
 pnpm install
 pnpm run type-check      # tsc --noEmit
 pnpm run test            # vitest unit suite
-pnpm run test:coverage   # vitest + V8 coverage; prints the line total and enforces vitest.config.ts thresholds
+pnpm run test:coverage   # vitest + V8 coverage; prints the line total and enforces the recorded gate
 pnpm run test:worker     # node --test for the dependency-free worker
 ```
 
 `.github/workflows/ci.yml` runs all of these on every push and pull request, uploads the
 `coverage/` report as a build artifact, and appends the coverage line total to the job summary.
+
+The coverage gate is the levels measured on `main` at `e4cdf5b` (lines 70.5%, statements
+45.57%, functions 35.08%, branches 36.15%), floored to whole percent. The numbers are declared
+in the CI job's `env:` block (`COVERAGE_LINES_THRESHOLD`, …) and read back by
+`vitest.config.ts`, so CI and a local `pnpm run test:coverage` fail below the same level — a
+reported total below it exits non-zero and fails the job. Raise them as tests are added:
+`tests/coverage-gate.test.ts` fails when the workflow and the config drift apart, and an
+unreadable report is reported as `unavailable` with a reason instead of a zero.
 
 ## Test the GUI locally
 
