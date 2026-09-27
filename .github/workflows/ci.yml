@@ -16,6 +16,19 @@ jobs:
   quality:
     name: Type-check, tests and coverage
     runs-on: ubuntu-latest
+    # Recorded coverage gate. `pnpm run test:coverage` runs the vitest suite with
+    # these as its fail-under thresholds, so the job fails when any metric drops
+    # below them. They are the levels measured on main at e4cdf5b (lines 70.5%,
+    # statements 45.57%, functions 35.08%, branches 36.15%), floored to whole
+    # percent. vitest.config.ts reads the same variables, so a local
+    # `pnpm run test:coverage` enforces an identical gate, and
+    # tests/coverage-gate.test.ts fails when the two drift apart. Raise them as
+    # tests are added.
+    env:
+      COVERAGE_LINES_THRESHOLD: 70
+      COVERAGE_STATEMENTS_THRESHOLD: 45
+      COVERAGE_FUNCTIONS_THRESHOLD: 35
+      COVERAGE_BRANCHES_THRESHOLD: 36
     steps:
       - name: Checkout
         uses: actions/checkout@v5
